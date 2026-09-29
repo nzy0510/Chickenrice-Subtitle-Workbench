@@ -1,0 +1,57 @@
+{
+  "engine_url": "https://github.com/TransWithAI/Faster-Whisper-TransWithAI-ChickenRice/releases/download/v1.10/",
+  "engines": {
+    "cu118": {
+      "size": 2423026019,
+      "sha256": "76f7f3f1178b58b57246797e953ec51c3dff8ba458a6830c9c5c623c8ce4414d",
+      "parts": [
+        {"size": 2097152000, "sha256": "00a42725a23568850368680a3fb2873e06356a0dc5dd640843813048b9515200"},
+        {"size": 325874019, "sha256": "f6ceaf58afd023c90bca3ae461f4f0e7fab7ae7640cabfa608c05440d4e884f5"}
+      ]
+    },
+    "cu122": {
+      "size": 2853553421,
+      "sha256": "d393ac272424d564bb4def94427775c92d3d33816bfc11571aed97d490d12873",
+      "parts": [
+        {"size": 2097152000, "sha256": "2a9836acf7fcae4aac114c4a2f15306146c7223067962cac2cd6d9051c742d33"},
+        {"size": 756401421, "sha256": "41f3bad8184a6cbb7b5357f44fb20c1922a8f8c9d8250fd3731aeda9eed360cf"}
+      ]
+    },
+    "cu128": {
+      "size": 3514289663,
+      "sha256": "284eb261ab4fa2f62670e9422fb7ad802e64605143fc518ba5edb0778d6775ee",
+      "parts": [
+        {"size": 2097152000, "sha256": "d40b8df13b2a972294304c68f6dced01fa25b6bb9503c88940a386fece694c41"},
+        {"size": 1417137663, "sha256": "cdbc383cb266983ab55f7d7406c014e0460d0788ca87641522a004350cee0053"}
+      ]
+    }
+  },
+  "models": {
+    "translate": {
+      "title": "中文翻译模型",
+      "repo": "chickenrice0721/whisper-large-v2-translate-zh-v0.2-st-ct2",
+      "revision": "2a896581429aa8100eaa5586bc36a5b3011871bc",
+      "files": {
+        "model.bin": {"size": 3086913037, "sha256": "d9ede0107bf5eef437db3625216e2395aebafd0a72967c5583c6234659d18273"},
+        "config.json": {"size": 2796, "git_sha1": "346bb8684801a61c15ce82bcb80c29a63c2d1f94"},
+        "preprocessor_config.json": {"size": 356, "git_sha1": "d7c5b1dfd466c815664b16139e8f605620d22e4e"},
+        "tokenizer.json": {"size": 2480466, "git_sha1": "1e95340ff836fad1b5932e800fb7b8c5e6d78a74"},
+        "vocabulary.json": {"size": 1068103, "git_sha1": "4f1403081291fea94e565ed322786d6e7d89246d"},
+        "README.md": {"size": 4794, "git_sha1": "6417055ab30a6984264230b82fdf56afb72793b1"}
+      }
+    },
+    "transcribe": {
+      "title": "日文转录模型",
+      "repo": "TransWithAI/whisper-ja-1.5B-ct2",
+      "revision": "1527314b14da5bdf0d14e7328649d4fa26840188",
+      "files": {
+        "model.bin": {"size": 3087284237, "sha256": "01041dbc312122f6f0f5ef6dd89f2ad7dc0bba7b746e8e1bc3c4f04f0af0befd"},
+        "config.json": {"size": 2700, "git_sha1": "ec37eddc960883470a7fa6cc74ea22feba7dbae7"},
+        "preprocessor_config.json": {"size": 340, "git_sha1": "931c77a740890c46365c7ae0c9d350ba3cca908f"},
+        "tokenizer.json": {"size": 2480617, "git_sha1": "3a5e2ba63acdcac9a19ba56cf9bd27f185bfff61"},
+        "vocabulary.json": {"size": 1068114, "git_sha1": "0adcd01e7c237205d593b707e66dd5d7bc785d2d"},
+        "README.md": {"size": 1543, "git_sha1": "5f3e3136634279d86e9ddc3cc7129dc12284a36d"}
+      }
+    }
+  }
+}

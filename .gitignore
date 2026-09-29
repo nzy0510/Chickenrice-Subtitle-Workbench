@@ -1,0 +1,41 @@
+# Local environments, settings, run logs and legacy machine-specific paths
+/.venv/
+/.gui/
+/.setup/
+/python-path.txt
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+
+# Download the third-party engine and models separately
+/extracted/
+/models/
+*.bin
+*.onnx
+*.safetensors
+*.zip
+*.zip.*
+*.7z
+*.log
+
+# Personal media and generated subtitles
+ChickenRice字幕/
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.aac
+*.ogg
+*.wma
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.flv
+*.wmv
+*.srt
+*.vtt
+*.lrc
