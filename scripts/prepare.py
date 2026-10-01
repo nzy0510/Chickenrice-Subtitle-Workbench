@@ -306,7 +306,7 @@ def main():
         print("ChickenRice 字幕工作台\n")
         both = True
         if not args.check:
-            print("1. 中文字幕（直接按回车）\n2. 中文和日文字幕\n")
+            print("1. 中文翻译模型（生成中文字幕，直接按回车）\n2. 中文翻译和日文转录模型（生成中文字幕和日文字幕）\n")
             choice = input("请选择：").strip()
             while choice not in ("", "1", "2"):
                 choice = input("请输入 1 或 2：").strip()
