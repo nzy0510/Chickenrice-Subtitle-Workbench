@@ -139,14 +139,14 @@ class SetupTests(unittest.TestCase):
 
     def test_split_engine_download_is_joined_verified_and_installed(self):
         data, pieces, resources = self.engine_fixture()
-        old = self.root / "extracted"
+        old = self.root / "engine"
         old.mkdir()
         (old / "user-notes.txt").write_text("keep")
         with patch.object(prepare, "RESOURCES", resources), patch.object(prepare, "urlopen",
                 side_effect=[Response(p) for p in pieces]):
             prepare.install_engine("test", self.root, self.cache)
         self.assertTrue(prepare.engine_ready(old))
-        backups = list(self.cache.glob("extracted-backup-*"))
+        backups = list(self.cache.glob("engine-backup-*"))
         self.assertEqual((backups[0] / "user-notes.txt").read_text(), "keep")
         self.assertFalse(list(self.cache.glob("*.zip*")))
 
@@ -154,10 +154,24 @@ class SetupTests(unittest.TestCase):
         data, pieces, resources = self.engine_fixture()
         with zipfile.ZipFile(io.BytesIO(data)) as package:
             package.extractall(self.cache)
-        (self.cache / "package").rename(self.root / "extracted")
+        (self.cache / "package").rename(self.root / "engine")
         with patch.object(prepare, "urlopen") as network:
             prepare.install_engine("test", self.root, self.cache)
         network.assert_not_called()
+
+    def test_legacy_engine_is_renamed_without_download(self):
+        data, pieces, resources = self.engine_fixture()
+        with zipfile.ZipFile(io.BytesIO(data)) as package:
+            package.extractall(self.cache)
+        legacy = self.root / "extracted"
+        (self.cache / "package").rename(legacy)
+        (legacy / "user-notes.txt").write_text("keep")
+        with patch.object(prepare, "urlopen") as network:
+            prepare.install_engine("test", self.root, self.cache)
+        network.assert_not_called()
+        self.assertFalse(legacy.exists())
+        self.assertTrue(prepare.engine_ready(self.root / "engine"))
+        self.assertEqual((self.root / "engine/user-notes.txt").read_text(), "keep")
 
     def test_archive_path_cannot_escape_staging(self):
         data, pieces, resources = self.engine_fixture("../escaped.txt")
@@ -166,7 +180,7 @@ class SetupTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "文件路径"):
                 prepare.install_engine("test", self.root, self.cache)
         self.assertFalse((self.cache / "escaped.txt").exists())
-        self.assertFalse((self.root / "extracted").exists())
+        self.assertFalse((self.root / "engine").exists())
 
     def model_fixture(self):
         files = {"model.bin": b"weights", "config.json": b"{}", "tokenizer.json": b"{}",

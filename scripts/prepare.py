@@ -136,7 +136,10 @@ def engine_ready(directory):
 
 
 def install_engine(variant, root, cache):
-    target = root / "extracted"
+    target = root / "engine"
+    legacy = root / "extracted"
+    if not target.exists() and legacy.resolve().is_relative_to(root.resolve()) and engine_ready(legacy):
+        legacy.rename(target)
     if engine_ready(target):
         print("字幕处理程序已准备好。")
         return
@@ -179,7 +182,7 @@ def install_engine(variant, root, cache):
         assert target.resolve().is_relative_to(root.resolve())
         backup = None
         if target.exists():
-            backup = cache / f"extracted-backup-{time.time_ns()}"
+            backup = cache / f"engine-backup-{time.time_ns()}"
             assert backup.resolve().is_relative_to(root.resolve())
             target.rename(backup)
         try:
@@ -238,7 +241,7 @@ def prepare_gui(root, cache):
 def prepare(root, both=False, check=False):
     cache = root / ".setup"
     cache.mkdir(exist_ok=True)
-    for folder in (cache, root / "models", root / "extracted", root / ".venv"):
+    for folder in (cache, root / "models", root / "engine", root / ".venv"):
         if not folder.resolve().is_relative_to(root.resolve()):
             raise RuntimeError("安装目录指向了项目外部，请将工作台放在独立文件夹后重试。")
     path = root / ".gui" / "settings.json"
@@ -249,7 +252,7 @@ def prepare(root, both=False, check=False):
     selected_device = settings.get("device", device)
     print("将使用 NVIDIA 显卡处理字幕。" if selected_device == "cuda" else "将使用 CPU 处理字幕。")
     if check:
-        print("字幕处理程序已准备好。" if engine_ready(root / "extracted") else "字幕处理程序尚需下载。")
+        print("字幕处理程序已准备好。" if engine_ready(root / "engine") else "字幕处理程序尚需下载。")
     else:
         prepare_gui(root, cache)
         install_engine(variant, root, cache)

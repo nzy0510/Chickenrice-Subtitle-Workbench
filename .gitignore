@@ -10,6 +10,7 @@ __pycache__/
 !.env.example
 
 # Download the third-party engine and models separately
+/engine/
 /extracted/
 /models/
 *.bin

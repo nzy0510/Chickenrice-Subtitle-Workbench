@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ENGINE = ROOT / "extracted" / "infer.exe"
+ENGINE = ROOT / "engine" / "infer.exe"
 DATA = ROOT / ".gui"
 MODEL_ROOT = ROOT / "models"
 SUFFIXES = "wav,flac,mp3,m4a,aac,ogg,wma,mp4,mkv,avi,mov,webm,flv,wmv"
