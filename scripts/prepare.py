@@ -123,7 +123,7 @@ def detect_engine():
                                          stderr=subprocess.DEVNULL).decode(errors="replace")
     except (OSError, subprocess.SubprocessError) as error:
         raise RuntimeError("暂时无法读取 NVIDIA 显卡信息，请检查显卡驱动后重试。") from error
-    version = re.search(r"CUDA Version:\s*(\d+)\.(\d+)", status)
+    version = re.search(r"CUDA(?: UMD)? Version:\s*(\d+)\.(\d+)", status)
     if not version or not names.strip():
         raise RuntimeError("请先更新 NVIDIA 显卡驱动，再运行下载脚本。")
     return select_engine(names.splitlines()[0], tuple(map(int, version.groups())))

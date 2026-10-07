@@ -35,6 +35,7 @@ class Settings:
     compute: str = "int8_float16"
     formats: str = "srt"
     output: str = ""
+    output_source: bool = False
     overwrite: bool = False
     threshold: float = 0.5
     min_speech: int = 300
@@ -116,7 +117,12 @@ def discover_files(paths):
 
 
 def output_dir(source, settings):
-    base = Path(settings.output) if settings.output else source.parent / "ChickenRice字幕"
+    if settings.output:
+        base = Path(settings.output)
+    elif settings.output_source:
+        return source.parent
+    else:
+        base = source.parent / "ChickenRice字幕"
     return base / settings.language_dir
 
 
