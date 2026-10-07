@@ -360,7 +360,7 @@ class Window(QMainWindow):
             row.addWidget(box)
         output_layout.addLayout(row)
         self.output_mode = QComboBox()
-        self.output_mode.addItems(["源文件旁 · 独立字幕目录", "选择输出文件夹"])
+        self.output_mode.addItems(["源文件旁 · 独立字幕目录", "音频所在目录", "选择输出文件夹"])
         output_layout.addWidget(self.output_mode)
         output_row = QHBoxLayout()
         self.output_path = QLineEdit()
@@ -498,7 +498,7 @@ class Window(QMainWindow):
         <h3>文件导入</h3><p>支持拖入音视频文件或文件夹，以及文件选择对话框。文件夹导入包含子目录，相同文件路径自动去重。</p>
         <h3>处理方式与预设</h3><p>中文字幕使用海南鸡翻译模型，日文转录使用日语模型。运行设备支持 NVIDIA GPU 和 CPU。标准、轻声与自定义预设控制语音检测参数。</p>
         <h3>字幕预览</h3><p>显示所选文件的字幕内容、开始时间和结束时间。队列与预览区的高度通过分隔条调节。“展开预览”将预览区扩展至工作区宽度，“还原布局”恢复队列与参数面板。</p>
-        <h3>输出管理</h3><p>支持 SRT、VTT 和 LRC。默认保存至音频旁的 ChickenRice字幕/中文 或 ChickenRice字幕/日文；自定义输出目录也按语言区分。默认跳过已有字幕，开启覆盖后替换同名字幕。</p>
+        <h3>输出管理</h3><p>支持 SRT、VTT 和 LRC。默认保存至音频旁的 ChickenRice字幕/中文 或 ChickenRice字幕/日文；也可直接保存至音频所在目录（字幕与音频同目录、不分子目录），或选择自定义输出目录（按语言区分）。默认跳过已有字幕，开启覆盖后替换同名字幕。</p>
         <h3>任务与日志</h3><p>显示当前文件、音频块进度和处理用时。停止操作结束当前推理及后续队列，已完成字幕保留。运行日志记录本次参数、引擎输出和错误信息。</p>
         <h3>本地运行</h3><p>音频识别、翻译、设置保存与日志记录均在本机完成。模型路径按任务类型分别保存。</p>
         <p><a href="https://github.com/TransWithAI/Faster-Whisper-TransWithAI-ChickenRice">ChickenRice 项目</a> · <a href="https://github.com/WEIFENG2333/VideoCaptioner">界面交互参考：VideoCaptioner</a></p>""")
@@ -526,7 +526,7 @@ class Window(QMainWindow):
         self.model_edits["translate"].setText(s.translate_model)
         self.model_edits["transcribe"].setText(s.transcribe_model)
         self.output_path.setText(s.output)
-        self.output_mode.setCurrentIndex(1 if s.output else 0)
+        self.output_mode.setCurrentIndex(2 if s.output else (1 if s.output_source else 0))
         self.overwrite.setChecked(s.overwrite)
         for key, checkbox in self.formats.items():
             checkbox.setChecked(key in s.formats.split(","))
@@ -545,7 +545,8 @@ class Window(QMainWindow):
                        translate_model=self.model_edits["translate"].text().strip(),
                        transcribe_model=self.model_edits["transcribe"].text().strip(),
                        formats=",".join(k for k, v in self.formats.items() if v.isChecked()),
-                       output=self.output_path.text().strip() if self.output_mode.currentIndex() else "",
+                       output=self.output_path.text().strip() if self.output_mode.currentIndex() == 2 else "",
+                       output_source=self.output_mode.currentIndex() == 1,
                        overwrite=self.overwrite.isChecked(), smart_split=self.smart_split.isChecked(),
                        merge=self.merge.isChecked(), **values)
 
@@ -567,11 +568,17 @@ class Window(QMainWindow):
         self.model_hint.setText(f"{name} · {'本地已就绪' if ready else '模型文件缺失'}")
         self.model_hint.setStyleSheet("color: #248263;" if ready else "color: #b05b35;")
         self.model_hint.setToolTip(str(model))
-        custom = self.output_mode.currentIndex() == 1
+        mode = self.output_mode.currentIndex()
+        custom = mode == 2
         self.output_path.setVisible(custom)
         self.browse_output.setVisible(custom)
         language = "中文" if task == "translate" else "日文"
-        self.output_hint.setText(f"保存到：{'所选目录' if custom else '音频所在目录 / ChickenRice字幕'} / {language}")
+        if mode == 2:
+            self.output_hint.setText(f"保存到：所选目录 / {language}")
+        elif mode == 1:
+            self.output_hint.setText("保存到：音频所在目录")
+        else:
+            self.output_hint.setText(f"保存到：音频所在目录 / ChickenRice字幕 / {language}")
 
     def apply_preset(self):
         self.set_preset(self.preset.currentText())
@@ -674,7 +681,7 @@ class Window(QMainWindow):
             return
         try:
             settings = self.collect_settings()
-            if self.output_mode.currentIndex() and not settings.output:
+            if self.output_mode.currentIndex() == 2 and not settings.output:
                 raise ValueError("请选择字幕输出文件夹。")
             validate(settings, self.sources)
             save_settings(settings, self.settings_path)
