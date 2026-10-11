@@ -111,10 +111,25 @@ def select_engine(gpu_name, cuda_version):
     return ("cu122" if cuda_version >= (12, 2) else "cu118"), "cuda"
 
 
-def detect_engine():
+def select_amd_engine(gpu_name):
+    # Model families documented by the pinned v1.10 upstream release.
+    model = re.search(r"\bRadeon(?:\s*\(TM\))?\s+RX\s*(\d{4})(?!\d)", gpu_name, re.I)
+    if not model:
+        return None
+    families = {
+        "gfx101x_dgpu": {5300, 5500, 5600, 5700},
+        "gfx103x_dgpu": {6300, 6400, 6450, 6500, 6550, 6600, 6650, 6700, 6750,
+                         6800, 6850, 6900, 6950},
+        "gfx110x_all": {7400, 7600, 7650, 7700, 7800, 7900},
+        "gfx120x_all": {9060, 9070},
+    }
+    return next((variant for variant, models in families.items() if int(model[1]) in models), None)
+
+
+def detect_nvidia_engine():
     program = shutil.which("nvidia-smi")
     if not program:
-        return select_engine("", (0, 0))
+        return None
     flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     try:
         names = subprocess.check_output([program, "--query-gpu=name", "--format=csv,noheader"],
@@ -129,18 +144,63 @@ def detect_engine():
     return select_engine(names.splitlines()[0], tuple(map(int, version.groups())))
 
 
+def detect_engine(preferred=None):
+    nvidia_error = None
+    if preferred != "amd":
+        try:
+            nvidia = detect_nvidia_engine()
+            if nvidia:
+                return nvidia
+        except RuntimeError as error:
+            nvidia_error = error
+    flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    try:
+        names = subprocess.check_output([
+            "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+            "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "
+            "Get-CimInstance Win32_VideoController -ErrorAction Stop | Select-Object -ExpandProperty Name",
+        ], timeout=15, creationflags=flags, stderr=subprocess.DEVNULL).decode("utf-8-sig", errors="replace")
+    except (OSError, subprocess.SubprocessError):
+        if nvidia_error:
+            raise nvidia_error
+        print("无法读取显卡型号，将使用 CPU。可检查显卡驱动后重新运行下载脚本。")
+        return "cu118", "cpu"
+    for name in names.splitlines():
+        variant = select_amd_engine(name)
+        if variant:
+            return variant, "amd"
+    if nvidia_error:
+        raise nvidia_error
+    if re.search(r"AMD|Radeon", names, re.I):
+        print("检测到的 AMD 显卡不在当前引擎支持列表中，将使用 CPU。")
+    return "cu118", "cpu"
+
+
 def engine_ready(directory):
     required = ("infer.exe", "models/whisper_vad.onnx", "models/whisper-base/preprocessor_config.json")
     return (all((directory / name).is_file() and (directory / name).stat().st_size for name in required)
             and any((directory / "_internal").glob("python3*.dll")))
 
 
-def install_engine(variant, root, cache):
+def engine_matches(directory, variant, device=None):
+    if not engine_ready(directory):
+        return False
+    if device == "cpu":
+        return True
+    marker = directory / "engine-variant.txt"
+    if marker.is_file():
+        return marker.read_text(encoding="utf-8").strip() == variant
+    # Older installations have no marker. Keep CUDA installs usable, but never
+    # mistake one for an AMD package or guess an unmarked AMD package's GFX family.
+    return not variant.startswith("gfx") and not any(directory.rglob("amdhip64*.dll"))
+
+
+def install_engine(variant, root, cache, device=None):
     target = root / "engine"
     legacy = root / "extracted"
     if not target.exists() and legacy.resolve().is_relative_to(root.resolve()) and engine_ready(legacy):
         legacy.rename(target)
-    if engine_ready(target):
+    if engine_matches(target, variant, device):
         print("字幕处理程序已准备好。")
         return
     spec = RESOURCES["engines"][variant]
@@ -178,7 +238,8 @@ def install_engine(variant, root, cache):
         candidates = [p.parent for p in staging.rglob("infer.exe") if engine_ready(p.parent)]
         if len(candidates) != 1:
             raise RuntimeError("下载包中缺少字幕处理程序，请检查下载版本。")
-        # Keep any pre-existing incomplete installation intact in the local setup cache.
+        (candidates[0] / "engine-variant.txt").write_text(variant, encoding="utf-8")
+        # Preserve the previous installation, including when switching GPU backends.
         assert target.resolve().is_relative_to(root.resolve())
         backup = None
         if target.exists():
@@ -248,14 +309,16 @@ def prepare(root, both=False, check=False):
     settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     if not isinstance(settings, dict):
         raise RuntimeError("工作台设置无法读取，请先通过诊断启动检查。")
-    variant, device = ("cu118", "cpu") if settings.get("device") == "cpu" else detect_engine()
-    selected_device = settings.get("device", device)
-    print("将使用 NVIDIA 显卡处理字幕。" if selected_device == "cuda" else "将使用 CPU 处理字幕。")
+    variant, device = (("cu118", "cpu") if settings.get("device") == "cpu"
+                       else detect_engine(settings.get("device")))
+    device_name = {"cuda": "NVIDIA 显卡", "amd": "AMD 显卡", "cpu": "CPU"}[device]
+    print(f"将使用 {device_name} 处理字幕。")
     if check:
-        print("字幕处理程序已准备好。" if engine_ready(root / "engine") else "字幕处理程序尚需下载。")
+        print("字幕处理程序已准备好。" if engine_matches(root / "engine", variant, device)
+              else "字幕处理程序尚需下载。")
     else:
         prepare_gui(root, cache)
-        install_engine(variant, root, cache)
+        install_engine(variant, root, cache, device)
     model_paths = {}
     for task in (("translate", "transcribe") if both else ("translate",)):
         model = prepare_model(task, settings, root, check)
@@ -271,8 +334,11 @@ def prepare(root, both=False, check=False):
     for key, value in model_paths.items():
         if current.get(key) == settings.get(key):
             updated[key] = value
-    updated.setdefault("device", device)
-    updated.setdefault("compute", "int8" if updated["device"] == "cpu" else "int8_float16")
+    if current.get("device") == settings.get("device"):
+        updated["device"] = device
+        if current.get("compute") == settings.get("compute") and (
+                device != settings.get("device") or "compute" not in current):
+            updated["compute"] = {"cpu": "int8", "amd": "auto", "cuda": "int8_float16"}[device]
     if updated != current:
         path.parent.mkdir(exist_ok=True)
         temporary = path.with_suffix(".prepare.tmp")

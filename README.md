@@ -7,7 +7,7 @@
 - 生成后直接预览字幕，导出 SRT、VTT 或 LRC。
 - 全程在电脑上处理音频，无需账号。
 
-适用于 Windows 10 / 11。有 NVIDIA 显卡可以加速，也支持 CPU。
+适用于 Windows 10 / 11。支持 NVIDIA、AMD 显卡加速，也支持 CPU。
 
 ## 开始使用
 
@@ -18,6 +18,14 @@
 首次下载需要一些时间；中途断开后，重新双击下载脚本即可继续。已经准备好的文件会直接复用。
 
 字幕默认保存在音频旁的 **`ChickenRice字幕`** 文件夹中，中文和日文分别存放。
+
+## AMD 显卡
+
+首次下载会识别显卡，自动选择对应引擎。支持上游列出的 **Radeon RX 5000、6000、7000、9000 系列独显**，具体型号见[上游支持列表](https://github.com/TransWithAI/Faster-Whisper-TransWithAI-ChickenRice/blob/v1.10/README.md#amd-显卡rocmhip-amd-gpu-rocmhip)。请先安装 AMD 显卡驱动；引擎已内置 ROCm/HIP 运行文件，无需另外安装 ROCm。
+
+**已经使用旧版的 AMD 用户**：在工作台中将运行设备改为“AMD GPU”，关闭窗口保存选择，再运行 `首次使用-下载所需文件.cmd`。模型会复用，旧引擎会保存在 `.setup` 的备份目录。AMD 默认选择“自动精度”。
+
+RX 580、Vega、890M / 8060S / 860M 等未支持型号会使用 CPU。同时有 NVIDIA 和 AMD 显卡时默认使用 NVIDIA，也可按上述步骤切换到 AMD。
 
 ## 日常使用
 

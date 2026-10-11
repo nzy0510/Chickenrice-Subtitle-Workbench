@@ -117,6 +117,24 @@ class BackendTests(Fixture):
         with self.assertRaisesRegex(ValueError, "精度"):
             validate(replace(self.settings, device="cpu"), [self.source()], self.engine)
 
+    def test_amd_settings_reach_the_engine_with_automatic_precision(self):
+        (self.engine.parent / "engine-variant.txt").write_text("gfx110x_all")
+        settings = replace(self.settings, device="amd", compute="auto")
+        source = self.source()
+        validate(settings, [source], self.engine)
+        args = build_args(settings, [source], output_dir(source, settings), self.root / "generation.json")
+        self.assertEqual(args[args.index("--device") + 1], "amd")
+        self.assertEqual(args[args.index("--compute_type") + 1], "auto")
+
+    def test_wrong_gpu_engine_is_blocked_but_cpu_can_use_either(self):
+        source = self.source()
+        with self.assertRaisesRegex(ValueError, "引擎"):
+            validate(replace(self.settings, device="amd", compute="auto"), [source], self.engine)
+        (self.engine.parent / "engine-variant.txt").write_text("gfx110x_all")
+        with self.assertRaisesRegex(ValueError, "引擎"):
+            validate(self.settings, [source], self.engine)
+        validate(replace(self.settings, device="cpu", compute="int8"), [source], self.engine)
+
     def test_settings_roundtrip_and_snapshot(self):
         path = self.root / "settings.json"
         save_settings(self.settings, path)
@@ -236,7 +254,7 @@ class GuiTests(Fixture):
     def test_task_device_presets_and_settings_persist(self):
         w = self.window
         w.task.setCurrentIndex(1)
-        w.device.setCurrentIndex(1)
+        w.device.setCurrentIndex(w.device.findData("cpu"))
         w.set_preset("轻声 / 耳语")
         w.save_and_return()
         saved = load_settings(self.root / "gui-settings.json")
@@ -244,6 +262,38 @@ class GuiTests(Fixture):
         self.assertEqual((saved.threshold, saved.min_speech, saved.min_silence, saved.padding), PRESETS["轻声 / 耳语"])
         w.threshold.setValue(0.4)
         self.assertEqual(w.preset.currentText(), "自定义")
+
+    def test_amd_device_defaults_to_auto_and_persists(self):
+        w = self.window
+        self.assertGreaterEqual(w.device.findData("amd"), 0)
+        w.device.setCurrentIndex(w.device.findData("amd"))
+        self.assertEqual(w.compute.currentData(), "auto")
+        w.save_and_return()
+        saved = load_settings(self.root / "gui-settings.json")
+        self.assertEqual((saved.device, saved.compute), ("amd", "auto"))
+        w.settings = saved
+        w.apply_settings()
+        self.assertEqual((w.device.currentData(), w.compute.currentData()), ("amd", "auto"))
+        w.device.setCurrentIndex(w.device.findData("cpu"))
+        self.assertEqual(w.compute.currentData(), "int8")
+
+    def test_engine_badge_tracks_the_selected_gpu_backend(self):
+        w = self.window
+        with patch.object(desktop, "ENGINE", self.engine):
+            w.device.setCurrentIndex(w.device.findData("amd"))
+            self.assertEqual(w.engine_badge.text(), "需下载 AMD 引擎")
+            self.assertTrue(w.engine_detail.isVisible())
+            self.assertIn("首次使用-下载所需文件.cmd", w.engine_detail.text())
+            w.device.setCurrentIndex(w.device.findData("cpu"))
+            self.assertEqual(w.engine_badge.text(), "引擎已就绪")
+            self.assertFalse(w.engine_detail.isVisible())
+            (self.engine.parent / "engine-variant.txt").write_text("gfx110x_all")
+            w.device.setCurrentIndex(w.device.findData("amd"))
+            self.assertEqual(w.engine_badge.text(), "引擎已就绪")
+        with patch.object(desktop, "ENGINE", self.root / "missing.exe"):
+            w.device.setCurrentIndex(w.device.findData("cpu"))
+            self.assertEqual(w.engine_badge.text(), "需下载 CPU 引擎")
+            self.assertTrue(w.engine_detail.isVisible())
 
     def test_small_window_keeps_start_and_settings_actions_on_correct_pages(self):
         w = self.window

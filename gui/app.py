@@ -24,7 +24,7 @@ from PyQt5.QtWidgets import (
 
 from backend import (
     DATA, ENGINE, PRESETS, ROOT, SUFFIXES, Runner, Settings, discover_files,
-    expected_outputs, load_settings, output_dir, read_cues, save_settings, validate,
+    engine_supports_device, expected_outputs, load_settings, output_dir, read_cues, save_settings, validate,
 )
 from desktop_instance import APP_TITLE, activate_window, instance_lock_path
 
@@ -202,8 +202,6 @@ class Window(QMainWindow):
             layout.addWidget(btn)
         layout.addStretch()
         layout.addWidget(label("本地推理", "pill"))
-        self.engine_badge = label("引擎已就绪" if ENGINE.is_file() else "引擎未找到", "muted")
-        layout.addWidget(self.engine_badge)
         layout.addWidget(label("Faster Whisper\nTransWithAI", "muted"))
         return side
 
@@ -337,10 +335,22 @@ class Window(QMainWindow):
         task_layout.addWidget(self.model_hint)
         self.device = QComboBox()
         self.device.addItem("NVIDIA GPU", "cuda")
+        self.device.addItem("AMD GPU", "amd")
         self.device.addItem("CPU", "cpu")
         task_layout.addWidget(self.device)
         self.compute = QComboBox()
         task_layout.addWidget(self.compute)
+        self.engine_notice = QFrame()
+        self.engine_notice.setObjectName("engineNotice")
+        engine_layout = QVBoxLayout(self.engine_notice)
+        engine_layout.setContentsMargins(12, 10, 12, 10)
+        engine_layout.setSpacing(5)
+        self.engine_badge = label("", "engineTitle", True)
+        self.engine_detail = label("关闭工作台后，双击项目文件夹中的“首次使用-下载所需文件.cmd”。",
+                                   "engineDetail", True)
+        engine_layout.addWidget(self.engine_badge)
+        engine_layout.addWidget(self.engine_detail)
+        task_layout.addWidget(self.engine_notice)
         panel_layout.addWidget(task_card)
         preset_card, preset_layout = card("音声预设")
         self.preset = QComboBox()
@@ -496,7 +506,7 @@ class Window(QMainWindow):
         text.setOpenExternalLinks(True)
         text.setHtml("""<style>body{font-family:'Microsoft YaHei UI';color:#304058;line-height:1.7}h3{color:#1f416e}p{margin-bottom:18px}</style>
         <h3>文件导入</h3><p>支持拖入音视频文件或文件夹，以及文件选择对话框。文件夹导入包含子目录，相同文件路径自动去重。</p>
-        <h3>处理方式与预设</h3><p>中文字幕使用海南鸡翻译模型，日文转录使用日语模型。运行设备支持 NVIDIA GPU 和 CPU。标准、轻声与自定义预设控制语音检测参数。</p>
+        <h3>处理方式与预设</h3><p>中文字幕使用海南鸡翻译模型，日文转录使用日语模型。运行设备支持 NVIDIA GPU、AMD RX 5000/6000/7000/9000 系列独显和 CPU。AMD 默认自动选择计算精度。更换显卡类型后，保存设备选择并关闭工作台，再运行下载脚本。标准、轻声与自定义预设控制语音检测参数。</p>
         <h3>字幕预览</h3><p>显示所选文件的字幕内容、开始时间和结束时间。队列与预览区的高度通过分隔条调节。“展开预览”将预览区扩展至工作区宽度，“还原布局”恢复队列与参数面板。</p>
         <h3>输出管理</h3><p>支持 SRT、VTT 和 LRC。默认保存至音频旁的 ChickenRice字幕/中文 或 ChickenRice字幕/日文；也可直接保存至音频所在目录（字幕与音频同目录、不分子目录），或选择自定义输出目录（按语言区分）。默认跳过已有字幕，开启覆盖后替换同名字幕。</p>
         <h3>任务与日志</h3><p>显示当前文件、音频块进度和处理用时。停止操作结束当前推理及后续队列，已完成字幕保留。运行日志记录本次参数、引擎输出和错误信息。</p>
@@ -553,10 +563,23 @@ class Window(QMainWindow):
     def update_compute(self):
         self.compute.clear()
         choices = [("节省显存 · int8_float16", "int8_float16"), ("标准精度 · float16", "float16"),
-                   ("完整精度 · float32", "float32")] if self.device.currentData() == "cuda" else [
+                   ("完整精度 · float32", "float32")] if self.device.currentData() != "cpu" else [
                        ("CPU 量化 · int8", "int8"), ("CPU 完整精度 · float32", "float32")]
+        if self.device.currentData() == "amd":
+            choices.insert(0, ("自动精度 · 推荐", "auto"))
         for title, data in choices:
             self.compute.addItem(title, data)
+        ready = engine_supports_device(self.device.currentData(), ENGINE)
+        device_name = {"cuda": "NVIDIA", "amd": "AMD", "cpu": "CPU"}[self.device.currentData()]
+        self.engine_badge.setText("引擎已就绪" if ready else f"需下载 {device_name} 引擎")
+        self.engine_detail.setVisible(not ready)
+        background, border, text = (("#edf8f2", "#9dd6bc", "#176444") if ready else
+                                     ("#fff2d2", "#e4ba72", "#884900"))
+        self.engine_notice.setStyleSheet(
+            f"QFrame#engineNotice {{background: {background}; border: 1px solid {border}; "
+            f"border-left: 4px solid {text}; border-radius: 6px;}} "
+            f"QLabel#engineTitle {{color: {text}; font-size: 15px; font-weight: 600;}} "
+            f"QLabel#engineDetail {{color: {text}; font-size: 12px;}}")
 
     def update_hints(self):
         if not hasattr(self, "model_edits") or len(self.model_edits) < 2:

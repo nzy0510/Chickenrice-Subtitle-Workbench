@@ -131,6 +131,17 @@ def expected_outputs(source, settings):
             for fmt in settings.formats.split(",")]
 
 
+def engine_supports_device(device, engine=ENGINE):
+    if not engine.is_file():
+        return False
+    if device == "cpu":
+        return True
+    marker = engine.parent / "engine-variant.txt"
+    amd_engine = (marker.read_text(encoding="utf-8").strip().startswith("gfx") if marker.is_file()
+                  else any(engine.parent.rglob("amdhip64*.dll")))
+    return (device == "amd") == amd_engine
+
+
 def validate(settings, sources, engine=ENGINE):
     if not engine.is_file():
         raise ValueError(f"找不到推理程序：{engine}")
@@ -138,11 +149,15 @@ def validate(settings, sources, engine=ENGINE):
         raise ValueError("请先添加音频或视频文件。")
     if settings.task not in {"translate", "transcribe"}:
         raise ValueError("请选择翻译或转录任务。")
-    if settings.device not in {"cuda", "cpu"}:
-        raise ValueError("请选择 NVIDIA GPU 或 CPU。")
-    choices = {"cuda": {"int8_float16", "float16", "float32"}, "cpu": {"int8", "float32"}}
+    if settings.device not in {"cuda", "amd", "cpu"}:
+        raise ValueError("请选择 NVIDIA GPU、AMD GPU 或 CPU。")
+    choices = {"cuda": {"int8_float16", "float16", "float32"},
+               "amd": {"auto", "int8_float16", "float16", "float32"}, "cpu": {"int8", "float32"}}
     if settings.compute not in choices[settings.device]:
         raise ValueError("计算精度与运行设备不匹配。")
+    if not engine_supports_device(settings.device, engine):
+        raise ValueError("运行设备与已安装引擎不匹配。请关闭工作台保存当前选择，"
+                         "再双击“首次使用-下载所需文件.cmd”安装对应引擎。")
     for name in ("model.bin", "config.json", "tokenizer.json"):
         if not (settings.model / name).is_file() or (settings.model / name).stat().st_size == 0:
             raise ValueError(f"模型文件缺失：{settings.model / name}\n请在“参数设置”中选择完整的本地模型目录。")

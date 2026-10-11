@@ -24,6 +24,34 @@
         {"size": 2097152000, "sha256": "d40b8df13b2a972294304c68f6dced01fa25b6bb9503c88940a386fece694c41"},
         {"size": 1417137663, "sha256": "cdbc383cb266983ab55f7d7406c014e0460d0788ca87641522a004350cee0053"}
       ]
+    },
+    "gfx101x_dgpu": {
+      "size": 742897778,
+      "sha256": "28981d9dea181ab44b7426fd4ab5af2fc9b54f822a561d8a6a0e02abad0a3b28",
+      "parts": [
+        {"size": 742897778, "sha256": "28981d9dea181ab44b7426fd4ab5af2fc9b54f822a561d8a6a0e02abad0a3b28"}
+      ]
+    },
+    "gfx103x_dgpu": {
+      "size": 742897431,
+      "sha256": "b5a79cf497c0ca4201aefbe7fefe4c560908e21979d0bc08c5187e1a93c5607f",
+      "parts": [
+        {"size": 742897431, "sha256": "b5a79cf497c0ca4201aefbe7fefe4c560908e21979d0bc08c5187e1a93c5607f"}
+      ]
+    },
+    "gfx110x_all": {
+      "size": 742896842,
+      "sha256": "ac5a2f69e3998dc580048fd6f74b2f57e9c8038ef696ab78be0d9bc8961b13a6",
+      "parts": [
+        {"size": 742896842, "sha256": "ac5a2f69e3998dc580048fd6f74b2f57e9c8038ef696ab78be0d9bc8961b13a6"}
+      ]
+    },
+    "gfx120x_all": {
+      "size": 886784131,
+      "sha256": "7579c3c65647c98ecfaaea6d1b5d14d7c16141376ecb558662bd477e187af607",
+      "parts": [
+        {"size": 886784131, "sha256": "7579c3c65647c98ecfaaea6d1b5d14d7c16141376ecb558662bd477e187af607"}
+      ]
     }
   },
   "models": {
