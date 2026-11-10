@@ -1,6 +1,7 @@
 """ChickenRice desktop workbench, using the locally installed PyQt5 runtime."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -27,6 +28,25 @@ from backend import (
     engine_supports_device, expected_outputs, load_settings, output_dir, read_cues, save_settings, validate,
 )
 from desktop_instance import APP_TITLE, activate_window, instance_lock_path
+
+
+def configure_qt_plugins():
+    """Point Qt at the PyQt5 plugin directory explicitly. Qt 5 derives its default plugin
+    path through an 8-bit conversion, so an install folder with non-Latin characters turns
+    the path into '?' and QApplication aborts with "Could not find the Qt platform plugin"."""
+    try:
+        import PyQt5
+    except ImportError:
+        return
+    plugins = Path(PyQt5.__file__).parent / "Qt5" / "plugins"
+    if not plugins.is_dir():
+        return
+    os.environ.setdefault("QT_PLUGIN_PATH", str(plugins))
+    os.environ.setdefault("QT_QPA_PLATFORM_PLUGIN_PATH", str(plugins / "platforms"))
+
+
+configure_qt_plugins()
+
 
 STYLE = """
 QWidget { font-family: 'Microsoft YaHei UI', 'Segoe UI'; font-size: 13px; color: #223147; }

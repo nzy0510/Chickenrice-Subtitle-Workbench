@@ -376,6 +376,10 @@ class GuiTests(Fixture):
         self.assertEqual(w.cues.rowCount(), 1)
         self.assertEqual(w.records[str(w.sources[0])]["status"], "done")
 
+    def test_qt_platform_plugin_path_points_at_bundled_plugins(self):
+        platforms = Path(os.environ.get("QT_QPA_PLATFORM_PLUGIN_PATH", ""))
+        self.assertTrue((platforms / "qwindows.dll").is_file())
+
     def test_settings_page_documents_every_parameter(self):
         w = self.window
         texts = [child.text() for child in w.settings_content.findChildren(desktop.QLabel)]
