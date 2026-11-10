@@ -51,10 +51,14 @@ QPushButton#nav:checked { background: #dce8fa; color: #205cb7; font-weight: 600;
 QPushButton#nav:hover { background: #e2eaf6; }
 QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { background: white; border: 1px solid #d5dfea; border-radius: 6px; padding: 7px; min-height: 18px; }
 QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus { border-color: #397de0; }
-QLineEdit:disabled, QComboBox:disabled { background: #f1f4f8; color: #8896a8; }
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled { background: #f1f4f8; color: #8896a8; }
 QComboBox::drop-down { border: none; width: 25px; }
 QCheckBox { spacing: 8px; padding: 4px 0; }
 QCheckBox::indicator { width: 17px; height: 17px; }
+QSpinBox::up-button, QDoubleSpinBox::up-button { subcontrol-origin: border; subcontrol-position: top right; width: 22px; margin: 1px 1px 0 0; border: none; border-bottom: 1px solid #e4eaf2; border-top-right-radius: 6px; background: #f7f9fc; }
+QSpinBox::down-button, QDoubleSpinBox::down-button { subcontrol-origin: border; subcontrol-position: bottom right; width: 22px; margin: 0 1px 1px 0; border: none; border-top: 1px solid #e4eaf2; border-bottom-right-radius: 6px; background: #f7f9fc; }
+QSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover { background: #e6eefb; }
+QSpinBox::up-button:pressed, QSpinBox::down-button:pressed, QDoubleSpinBox::up-button:pressed, QDoubleSpinBox::down-button:pressed { background: #d6e4fa; }
 QTableWidget { background: white; border: none; gridline-color: #edf1f6; selection-background-color: #eaf2ff; selection-color: #203651; }
 QTableWidget::item { padding: 8px; border-bottom: 1px solid #edf1f6; }
 QHeaderView::section { background: #f7f9fc; border: none; border-bottom: 1px solid #e4eaf2; padding: 8px; color: #6a7b91; }
@@ -148,8 +152,12 @@ class Window(QMainWindow):
         self.resize(1250, 860)
         self.setMinimumSize(1020, 720)
         self.setAcceptDrops(True)
-        self.setStyleSheet(STYLE + '\nQComboBox::down-arrow { image: url("' +
-                          (Path(__file__).parent / "chevron.svg").as_posix() + '"); width: 12px; height: 8px; }')
+        chevron = (Path(__file__).parent / "chevron.svg").as_posix()
+        chevron_up = (Path(__file__).parent / "chevron-up.svg").as_posix()
+        self.setStyleSheet(
+            STYLE + '\nQComboBox::down-arrow { image: url("' + chevron + '"); width: 12px; height: 8px; }'
+            '\nQSpinBox::up-arrow, QDoubleSpinBox::up-arrow { image: url("' + chevron_up + '"); width: 10px; height: 6px; }'
+            '\nQSpinBox::down-arrow, QDoubleSpinBox::down-arrow { image: url("' + chevron + '"); width: 10px; height: 6px; }')
         pixmap = QPixmap(64, 64)
         pixmap.fill(QColor("#2667d5"))
         painter = QPainter(pixmap)
