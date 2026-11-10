@@ -228,6 +228,29 @@ def parse_progress(line):
     return None
 
 
+class WorkQueue:
+    """Thread-safe source queue shared by the GUI and an active run.
+
+    The GUI may append files while a run is in progress; the runner drains the queue in
+    rounds, so new files are processed after the current batch instead of being dropped."""
+
+    def __init__(self, initial=()):
+        self._items = list(initial)
+        self._lock = threading.Lock()
+
+    def extend(self, items):
+        with self._lock:
+            self._items.extend(items)
+
+    def take(self):
+        with self._lock:
+            return self._items.pop(0) if self._items else None
+
+    def __len__(self):
+        with self._lock:
+            return len(self._items)
+
+
 class Runner:
     """One inference process per output folder; model stays loaded across tracks in a group."""
     def __init__(self, emit, runs_dir=DATA / "runs", engine=ENGINE, command=None):
@@ -252,15 +275,17 @@ class Runner:
         if process.poll() is None:
             process.kill()
 
-    def run(self, sources, settings):
+    def run(self, sources, settings, work_queue=None):
         validate(settings, sources, self.engine)
+        work_queue = work_queue if work_queue is not None else WorkQueue(sources)
         run_dir = self.runs_dir / (datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6])
         run_dir.mkdir(parents=True)
         config = run_dir / "generation.json"
         config.write_text(json.dumps(settings.generation_config(), ensure_ascii=False, indent=2), encoding="utf-8")
-        manifest = {"settings": asdict(settings), "inputs": [str(p) for p in sources], "results": [], "engine_errors": []}
+        inputs = [str(p) for p in sources]
+        manifest = {"settings": asdict(settings), "inputs": inputs, "results": [], "engine_errors": []}
         self.emit("run_dir", str(run_dir))
-        results, groups = {}, defaultdict(list)
+        results = {}
 
         def result(source, status, message, outputs=()):
             item = {"source": str(source), "status": status, "message": message,
@@ -268,26 +293,30 @@ class Runner:
             results[str(source)] = item
             self.emit("result", item)
 
-        for source in sources:
-            outputs = expected_outputs(source, settings)
-            if not settings.overwrite and all(p.exists() for p in outputs):
-                result(source, "skipped", "已有字幕，已跳过", outputs)
-            else:
-                groups[output_dir(source, settings)].append(source)
-
-        with (run_dir / "engine.log").open("w", encoding="utf-8") as log:
-            for destination, group in groups.items():
-                # Stay below Windows' command-line length limit even with long Unicode paths.
-                batches, batch = [], []
-                for source in group:
-                    candidate = batch + [source]
-                    if batch and len(subprocess.list2cmdline(self.command + build_args(settings, candidate, destination, config))) > 28000:
-                        batches.append(batch)
-                        batch = []
-                    batch.append(source)
-                if batch:
+        def collect_batches(destination, group):
+            # Stay below Windows' command-line length limit even with long Unicode paths.
+            batches, batch = [], []
+            for source in group:
+                candidate = batch + [source]
+                if batch and len(subprocess.list2cmdline(self.command + build_args(settings, candidate, destination, config))) > 28000:
                     batches.append(batch)
-                for batch in batches:
+                    batch = []
+                batch.append(source)
+            if batch:
+                batches.append(batch)
+            return batches
+
+        def process(round_sources, log):
+            groups = defaultdict(list)
+            for source in round_sources:
+                outputs = expected_outputs(source, settings)
+                if not settings.overwrite and all(p.exists() for p in outputs):
+                    result(source, "skipped", "已有字幕，已跳过", outputs)
+                else:
+                    groups[output_dir(source, settings)].append(source)
+
+            for destination, group in groups.items():
+                for batch in collect_batches(destination, group):
                     if self.cancelled.is_set():
                         break
                     destination.mkdir(parents=True, exist_ok=True)
@@ -366,7 +395,23 @@ class Runner:
                             result(source, "cancelled", "已停止，当前文件未完成")
                         else:
                             result(source, "failed", f"未生成完整字幕（退出码 {exit_code}），详情见日志")
-            for source in sources:
+            for source in round_sources:
+                if str(source) not in results:
+                    result(source, "cancelled", "已停止，未处理")
+
+        with (run_dir / "engine.log").open("w", encoding="utf-8") as log:
+            while not self.cancelled.is_set():
+                round_sources = []
+                while (source := work_queue.take()) is not None:
+                    if str(source) not in inputs:
+                        inputs.append(str(source))
+                    round_sources.append(source)
+                if not round_sources:
+                    break
+                process(round_sources, log)
+            while (source := work_queue.take()) is not None:
+                if str(source) not in inputs:
+                    inputs.append(str(source))
                 if str(source) not in results:
                     result(source, "cancelled", "已停止，未处理")
         manifest["results"] = list(results.values())

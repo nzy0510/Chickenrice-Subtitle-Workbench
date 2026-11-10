@@ -20,7 +20,7 @@ from PyQt5.QtGui import QDragEnterEvent, QDropEvent
 from PyQt5.QtWidgets import QApplication
 
 import app as desktop
-from backend import (DATA, PRESETS, ROOT, Runner, Settings, build_args, discover_files,
+from backend import (DATA, PRESETS, ROOT, Runner, Settings, WorkQueue, build_args, discover_files,
                      expected_outputs, load_settings, output_dir, parse_progress, read_cues,
                      save_settings, validate)
 
@@ -38,6 +38,8 @@ for i, value in enumerate(inputs):
     print('Smart VAD chunk 1/2: 00:00:00,000 --> 00:00:01,000', flush=True)
     if p.stem == 'slow':
         time.sleep(60)
+    if p.stem == 'slow2':
+        time.sleep(1.2)
     if p.stem == 'failure':
         print('ERROR: requested test failure', flush=True)
         sys.exit(7)
@@ -221,6 +223,27 @@ class BackendTests(Fixture):
         self.assertTrue(results[0]["cancelled"])
         self.assertEqual([r["status"] for r in results[0]["results"]], ["cancelled", "cancelled"])
 
+    def test_work_queue_accepts_files_added_while_running(self):
+        first, second = self.source("slow2"), self.source("early")
+        queue = WorkQueue([first])
+        started = threading.Event()
+
+        def emit(kind, data):
+            if kind == "file" and data == str(first) and not started.is_set():
+                started.set()
+                queue.extend([second])
+
+        runner = self.runner(emit)
+        results = []
+        thread = threading.Thread(target=lambda: results.append(runner.run([first], self.settings, queue)))
+        thread.start()
+        self.assertTrue(started.wait(10))
+        thread.join(15)
+        self.assertFalse(thread.is_alive())
+        statuses = {r["source"]: r["status"] for r in results[0]["results"]}
+        self.assertEqual(statuses[str(first)], "done")
+        self.assertEqual(statuses[str(second)], "done")
+
     def test_chinese_progress_and_srt_vtt_lrc_preview(self):
         self.assertEqual(parse_progress("正在处理（translate，1/2）：D:\\音声.wav"), ("file", "D:\\音声.wav"))
         for suffix, body in (("srt", "1\n00:00:00,000 --> 00:00:01,000\n你好\n第二行\n\n"),
@@ -328,9 +351,10 @@ class GuiTests(Fixture):
         w = self.window
         w.add_paths([self.source()])
         worker_class = desktop.Worker
-        def fake_worker(sources, settings, parent):
-            return worker_class(sources, settings, parent, runner_factory=self.runner)
-        with patch.object(desktop, "Worker", side_effect=fake_worker):
+        def fake_worker(sources, settings, parent, **kwargs):
+            return worker_class(sources, settings, parent, runner_factory=self.runner, **kwargs)
+        with patch.object(desktop, "Worker", side_effect=fake_worker), \
+                patch.object(desktop, "ENGINE", self.engine):
             w.start_button.click()
         self.assertTrue(w.busy)
         self.assertFalse(w.add_button.isEnabled())
@@ -343,6 +367,41 @@ class GuiTests(Fixture):
         self.assertTrue(w.start_button.isEnabled())
         self.assertEqual(w.cues.rowCount(), 1)
         self.assertEqual(w.records[str(w.sources[0])]["status"], "done")
+
+    def test_drag_drop_while_running_joins_the_waiting_queue(self):
+        w = self.window
+        first, second = self.source("slow2"), self.source("early")
+        w.add_paths([first])
+        worker_class = desktop.Worker
+
+        def fake_worker(sources, settings, parent, **kwargs):
+            return worker_class(sources, settings, parent, runner_factory=self.runner, **kwargs)
+
+        with patch.object(desktop, "Worker", side_effect=fake_worker), \
+                patch.object(desktop, "ENGINE", self.engine):
+            w.start_button.click()
+        self.assertTrue(w.busy)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and w.records.get(str(first), {}).get("status") != "running":
+            self.qt.processEvents()
+            time.sleep(0.01)
+        self.assertEqual(w.records.get(str(first), {}).get("status"), "running")
+        mime = QMimeData()
+        mime.setUrls([QUrl.fromLocalFile(str(second))])
+        enter = QDragEnterEvent(QPoint(250, 180), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
+        QApplication.sendEvent(w, enter)
+        self.assertTrue(enter.isAccepted())
+        drop = QDropEvent(QPointF(250, 180), Qt.CopyAction, mime, Qt.LeftButton, Qt.NoModifier)
+        QApplication.sendEvent(w, drop)
+        self.assertFalse(w.add_button.isEnabled())  # buttons stay locked; dropping is the path
+        self.assertEqual(w.sources, [first, second])
+        deadline = time.monotonic() + 15
+        while w.busy and time.monotonic() < deadline:
+            self.qt.processEvents()
+            time.sleep(0.01)
+        self.assertFalse(w.busy)
+        self.assertEqual(w.records[str(first)]["status"], "done")
+        self.assertEqual(w.records[str(second)]["status"], "done")
 
 
 if __name__ == "__main__":

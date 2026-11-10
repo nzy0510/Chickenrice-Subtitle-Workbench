@@ -23,7 +23,7 @@ from PyQt5.QtWidgets import (
 )
 
 from backend import (
-    DATA, ENGINE, PRESETS, ROOT, SUFFIXES, Runner, Settings, discover_files,
+    DATA, ENGINE, PRESETS, ROOT, SUFFIXES, Runner, Settings, WorkQueue, discover_files,
     engine_supports_device, expected_outputs, load_settings, output_dir, read_cues, save_settings, validate,
 )
 from desktop_instance import APP_TITLE, activate_window, instance_lock_path
@@ -112,14 +112,15 @@ class Worker(QThread):
     completed = pyqtSignal(object)
     failed = pyqtSignal(str)
 
-    def __init__(self, sources, settings, parent=None, runner_factory=Runner):
+    def __init__(self, sources, settings, parent=None, runner_factory=Runner, queue=None):
         super().__init__(parent)
         self.sources, self.settings = sources, settings
+        self.queue = queue
         self.runner = runner_factory(self.event.emit)
 
     def run(self):
         try:
-            self.completed.emit(self.runner.run(self.sources, self.settings))
+            self.completed.emit(self.runner.run(self.sources, self.settings, self.queue))
         except Exception:
             self.failed.emit(traceback.format_exc())
 
@@ -135,6 +136,7 @@ class Window(QMainWindow):
             self.settings = Settings()
             self.load_error = f"上次设置未能读取，已载入默认值：{error}"
         self.sources, self.records = [], {}
+        self.work_queue = None
         self.worker = None
         self.run_dir = None
         self.current_file = None
@@ -246,8 +248,8 @@ class Window(QMainWindow):
         row.addWidget(self.remove_button)
         row.addWidget(self.clear_button)
         files_layout.addLayout(row)
-        drop = label("支持拖入音视频文件或文件夹", "muted")
-        drop.setToolTip("支持 WAV、FLAC、MP3 及常见视频格式；文件夹包含子目录。")
+        drop = label("支持拖入音视频文件或文件夹（运行中拖入会加入等待队列）", "muted")
+        drop.setToolTip("支持 WAV、FLAC、MP3 及常见视频格式；文件夹包含子目录。生成字幕时也可继续拖入。")
         files_layout.addWidget(drop)
         self.table = QTableWidget(0, 3)
         self.table.setHorizontalHeaderLabels(["文件", "大小", "状态"])
@@ -263,7 +265,7 @@ class Window(QMainWindow):
         self.table.setAcceptDrops(False)
         self.table.itemSelectionChanged.connect(self.preview_selected)
         files_layout.addWidget(self.table)
-        self.import_hint = label("递归导入子文件夹；相同文件路径自动去重。", "muted", True)
+        self.import_hint = label("递归导入子文件夹；相同文件路径自动去重。运行中拖入的文件会加入等待队列。", "muted", True)
         files_layout.addWidget(self.import_hint)
         left.addWidget(files_card)
 
@@ -505,7 +507,7 @@ class Window(QMainWindow):
         text = QTextBrowser()
         text.setOpenExternalLinks(True)
         text.setHtml("""<style>body{font-family:'Microsoft YaHei UI';color:#304058;line-height:1.7}h3{color:#1f416e}p{margin-bottom:18px}</style>
-        <h3>文件导入</h3><p>支持拖入音视频文件或文件夹，以及文件选择对话框。文件夹导入包含子目录，相同文件路径自动去重。</p>
+        <h3>文件导入</h3><p>支持拖入音视频文件或文件夹，以及文件选择对话框。文件夹导入包含子目录，相同文件路径自动去重。生成字幕过程中也可以继续拖入文件：新文件会加入等待队列，在当前文件完成后自动处理。</p>
         <h3>处理方式与预设</h3><p>中文字幕使用海南鸡翻译模型，日文转录使用日语模型。运行设备支持 NVIDIA GPU、AMD RX 5000/6000/7000/9000 系列独显和 CPU。AMD 默认自动选择计算精度。更换显卡类型后，保存设备选择并关闭工作台，再运行下载脚本。标准、轻声与自定义预设控制语音检测参数。</p>
         <h3>字幕预览</h3><p>显示所选文件的字幕内容、开始时间和结束时间。队列与预览区的高度通过分隔条调节。“展开预览”将预览区扩展至工作区宽度，“还原布局”恢复队列与参数面板。</p>
         <h3>输出管理</h3><p>支持 SRT、VTT 和 LRC。默认保存至音频旁的 ChickenRice字幕/中文 或 ChickenRice字幕/日文；也可直接保存至音频所在目录（字幕与音频同目录、不分子目录），或选择自定义输出目录（按语言区分）。默认跳过已有字幕，开启覆盖后替换同名字幕。</p>
@@ -641,18 +643,43 @@ class Window(QMainWindow):
             self.model_edits[task].setText(path)
 
     def add_paths(self, paths):
-        if self.busy or not paths:
+        if not paths:
             return
         try:
             found, ignored = discover_files(paths)
-            known = {str(p).casefold() for p in self.sources}
-            added = [p for p in found if str(p).casefold() not in known]
-            self.sources.extend(added)
-            self.refresh_table()
-            self.import_hint.setText(f"新增 {len(added)} 个文件；已自动去重。" + (f"忽略 {ignored} 个非音视频文件。" if ignored else ""))
-            self.status.setText(f"已准备 {len(self.sources)} 个文件")
         except (OSError, ValueError) as error:
             self.show_error(str(error))
+            return
+        known = {str(p).casefold() for p in self.sources}
+        added = [p for p in found if str(p).casefold() not in known]
+        if not added:
+            self.import_hint.setText("拖入的文件已在队列中，无需重复添加。")
+            return
+        if self.busy:
+            # The run keeps using the settings captured when it started. Only reject files
+            # whose subtitle names would collide with the running queue; everything else
+            # joins the work queue and is processed after the current file.
+            targets = {str(t.resolve()).casefold(): s
+                       for s in self.sources for t in expected_outputs(s, self.settings)}
+            for source in added:
+                for target in expected_outputs(source, self.settings):
+                    key = str(target.resolve()).casefold()
+                    existing = targets.get(key)
+                    if existing is not None and existing != source:
+                        self.show_error(f"两个输入会生成同名字幕：\n{existing}\n{source}\n请重命名音频后重新拖入。")
+                        return
+                    targets[key] = source
+            self.sources.extend(added)
+            self.work_queue.extend(added)
+            self.refresh_table()
+            self.import_hint.setText(f"已加入队列 {len(added)} 个文件，当前文件完成后自动处理。")
+            self.status.setText(f"已准备 {len(self.sources)} 个文件")
+            self.update_progress()
+            return
+        self.sources.extend(added)
+        self.refresh_table()
+        self.import_hint.setText(f"新增 {len(added)} 个文件；已自动去重。" + (f"忽略 {ignored} 个非音视频文件。" if ignored else ""))
+        self.status.setText(f"已准备 {len(self.sources)} 个文件")
 
     def refresh_table(self):
         self.table.setRowCount(len(self.sources))
@@ -685,7 +712,8 @@ class Window(QMainWindow):
             self.status.setText("队列为空")
 
     def dragEnterEvent(self, event):
-        if not self.busy and event.mimeData().hasUrls() and all(u.isLocalFile() for u in event.mimeData().urls()):
+        # Dropping is allowed while a run is in progress; add_paths queues new files.
+        if event.mimeData().hasUrls() and all(u.isLocalFile() for u in event.mimeData().urls()):
             event.acceptProposedAction()
 
     def dropEvent(self, event):
@@ -706,7 +734,7 @@ class Window(QMainWindow):
             settings = self.collect_settings()
             if self.output_mode.currentIndex() == 2 and not settings.output:
                 raise ValueError("请选择字幕输出文件夹。")
-            validate(settings, self.sources)
+            validate(settings, self.sources, ENGINE)
             save_settings(settings, self.settings_path)
         except (OSError, ValueError) as error:
             self.show_error(str(error))
@@ -722,7 +750,8 @@ class Window(QMainWindow):
         self.status.setText("正在准备本地模型…")
         self.started_at = time.monotonic()
         self.set_busy(True)
-        self.worker = Worker(list(self.sources), replace(settings), self)
+        self.work_queue = WorkQueue(self.sources)
+        self.worker = Worker(list(self.sources), replace(settings), self, queue=self.work_queue)
         self.worker.event.connect(self.on_event)
         self.worker.completed.connect(self.on_completed)
         self.worker.failed.connect(self.on_failed)
@@ -764,6 +793,8 @@ class Window(QMainWindow):
         self.status.setText(f"{prefix} · 生成 {counts['done']} · 跳过 {counts['skipped']} · 无对白 {counts['empty']} · 失败 {counts['failed']}")
         if manifest.get("engine_errors"):
             self.status.setText(self.status.text() + " · 引擎报错，详见日志")
+        if self.work_queue is not None and len(self.work_queue) > 0:
+            self.status.setText(self.status.text() + f" · {len(self.work_queue)} 个文件在结束后才加入，请再次开始")
         if counts["failed"] or manifest.get("engine_errors"):
             self.tabs.setCurrentIndex(1)
         else:
@@ -791,6 +822,7 @@ class Window(QMainWindow):
 
     def on_worker_finished(self):
         self.set_busy(False)
+        self.work_queue = None
         self.worker.deleteLater()
         self.worker = None
         if self.pending_close:
