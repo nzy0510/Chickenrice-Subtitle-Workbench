@@ -12,7 +12,6 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import traceback
 from urllib.error import HTTPError, URLError
@@ -195,6 +194,34 @@ def engine_matches(directory, variant, device=None):
     return not variant.startswith("gfx") and not any(directory.rglob("amdhip64*.dll"))
 
 
+def unpack_directory(parent):
+    """Create the unpack folder ourselves. tempfile asks Windows for mode 0o700, and Python
+    replaces that mode with a protected ACL that drops the inherited permissions (gh-118486),
+    which can deny the running program access to the folder it just made."""
+    while True:
+        path = parent / f"unpack-{time.time_ns():x}"
+        try:
+            path.mkdir()
+            return path.resolve()
+        except FileExistsError:
+            continue
+
+
+def move_into_place(source, target):
+    """Antivirus and search indexers can hold files under a freshly unpacked folder, so moving it
+    fails with a bare access error. Retry, then install a copy instead of losing the download."""
+    for attempt in range(5):
+        try:
+            source.rename(target)
+            return
+        except OSError:
+            if attempt == 4:
+                break
+            time.sleep(0.5 * (attempt + 1))
+    print("文件夹被其他程序占用，正在改用复制方式安装…", flush=True)
+    shutil.copytree(source, target)
+
+
 def install_engine(variant, root, cache, device=None):
     target = root / "engine"
     legacy = root / "extracted"
@@ -223,8 +250,8 @@ def install_engine(variant, root, cache, device=None):
     for part in parts:
         part.unlink(missing_ok=True)
     print("正在安装字幕处理程序…", flush=True)
-    with tempfile.TemporaryDirectory(prefix="unpack-", dir=cache) as temp:
-        staging = Path(temp).resolve()
+    staging = unpack_directory(cache)
+    try:
         assert staging.is_relative_to(root.resolve())
         with zipfile.ZipFile(archive) as package:
             for item in package.infolist():
@@ -247,11 +274,13 @@ def install_engine(variant, root, cache, device=None):
             assert backup.resolve().is_relative_to(root.resolve())
             target.rename(backup)
         try:
-            candidates[0].rename(target)
+            move_into_place(candidates[0], target)
         except OSError:
             if backup is not None and not target.exists():
                 backup.rename(target)
             raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     archive.unlink()
 
 
