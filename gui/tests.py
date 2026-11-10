@@ -223,6 +223,14 @@ class BackendTests(Fixture):
         self.assertTrue(results[0]["cancelled"])
         self.assertEqual([r["status"] for r in results[0]["results"]], ["cancelled", "cancelled"])
 
+    def test_release_upgrade_reuses_legacy_extracted_engine(self):
+        from backend import resolve_engine
+        self.assertEqual(resolve_engine(self.root), self.engine)
+        legacy = self.root / "legacy"
+        (legacy / "extracted").mkdir(parents=True)
+        (legacy / "extracted" / "infer.exe").write_bytes(b"fixture")
+        self.assertEqual(resolve_engine(legacy), legacy / "extracted" / "infer.exe")
+
     def test_work_queue_accepts_files_added_while_running(self):
         first, second = self.source("slow2"), self.source("early")
         queue = WorkQueue([first])

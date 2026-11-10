@@ -15,8 +15,23 @@ from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-ENGINE = ROOT / "engine" / "infer.exe"
 DATA = ROOT / ".gui"
+
+
+def resolve_engine(root=ROOT):
+    """Return the packaged runtime executable. Releases unpack into engine/; older releases
+    used extracted/, so keep using that folder after an upgrade instead of asking for a
+    redownload. The download script still migrates it to engine/ when it runs."""
+    primary = root / "engine"
+    if (primary / "infer.exe").is_file():
+        return primary / "infer.exe"
+    legacy = root / "extracted"
+    if (legacy / "infer.exe").is_file():
+        return legacy / "infer.exe"
+    return primary / "infer.exe"
+
+
+ENGINE = resolve_engine()
 MODEL_ROOT = ROOT / "models"
 SUFFIXES = "wav,flac,mp3,m4a,aac,ogg,wma,mp4,mkv,avi,mov,webm,flv,wmv"
 SUPPORTED = {"." + s for s in SUFFIXES.split(",")}
