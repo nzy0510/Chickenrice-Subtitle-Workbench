@@ -445,6 +445,17 @@ class Window(QMainWindow):
         box.valueChanged.connect(self.update_preset_label)
         return box
 
+    def with_hint(self, control, text):
+        """Wrap a control with a short visible explanation, reused as its tooltip."""
+        box = QWidget()
+        column = QVBoxLayout(box)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(3)
+        column.addWidget(control)
+        column.addWidget(label(text, "muted", True))
+        control.setToolTip(text)
+        return box
+
     def make_settings(self):
         page, layout = self.page("参数设置", "语音检测、分段、字幕合并与模型路径配置。")
         content = QWidget()
@@ -452,43 +463,55 @@ class Window(QMainWindow):
         content_layout.setContentsMargins(0, 0, 5, 0)
         content_layout.setSpacing(16)
         vad_card, vad_layout = card("语音检测")
-        vad_layout.addWidget(label("筛选进入识别流程的语音片段。", "muted", True))
+        vad_layout.addWidget(label("筛选进入识别流程的语音片段；参数调小更灵敏，调大更严格。", "muted", True))
         form = QFormLayout()
-        form.setVerticalSpacing(12)
+        form.setVerticalSpacing(14)
         self.threshold = self.spin(0.1, 0.9, 0.05, decimals=True)
         self.min_speech = self.spin(0, 3000, 50, " 毫秒")
         self.min_silence = self.spin(0, 5000, 50, " 毫秒")
         self.padding = self.spin(0, 2000, 50, " 毫秒")
-        for title, control, tip in (
-            ("检测阈值", self.threshold, "语音检测的置信度阈值。标准预设为 0.50，轻声预设为 0.35。"),
-            ("最短语音", self.min_speech, "过滤持续时间低于此值的语音片段。"),
-            ("切分所需静音", self.min_silence, "相邻语音之间达到此静音长度时，允许切分。"),
-            ("语音前后保留", self.padding, "在语音片段两端保留指定时长的音频。"),
+        for title, control, hint_text in (
+            ("检测阈值", self.threshold,
+             "语音检测的置信度阈值：调高更严格，噪音少但可能漏掉轻声；调低更灵敏，但可能把杂音当人声。"
+             "标准预设 0.50，轻声预设 0.35。"),
+            ("最短语音", self.min_speech,
+             "短于此值的语音片段会被忽略：调高可滤掉呼吸声和杂音，调低保留更多语气词。默认 300 毫秒。"),
+            ("切分所需静音", self.min_silence,
+             "语音之间安静达到该时长时才切段：调大字幕段更连贯，调小切分更碎。默认 100 毫秒。"),
+            ("语音前后保留", self.padding,
+             "每段语音前后额外保留的音频：调大可避免首尾被切断，调小更贴合原声。默认 200 毫秒。"),
         ):
-            control.setToolTip(tip)
-            form.addRow(title, control)
+            form.addRow(title, self.with_hint(control, hint_text))
         vad_layout.addLayout(form)
         content_layout.addWidget(vad_card)
         timing_card, timing_layout = card("时间轴与字幕合并")
+        timing_layout.addWidget(label("控制长音频的切块识别方式，以及相邻字幕的合并效果。", "muted", True))
         self.smart_split = QCheckBox("智能分段")
         self.merge = QCheckBox("合并重复、相邻片段")
         self.chunk_seconds = self.spin(5, 30, 1, " 秒")
         self.merge_gap = self.spin(0, 5000, 100, " 毫秒")
         self.merge_duration = self.spin(1000, 60000, 1000, " 毫秒")
         form = QFormLayout()
-        form.setVerticalSpacing(12)
-        form.addRow(self.smart_split)
-        form.addRow("目标分段长度", self.chunk_seconds)
-        form.addRow(self.merge)
-        form.addRow("允许合并的间隔", self.merge_gap)
-        form.addRow("字幕段时长上限", self.merge_duration)
+        form.setVerticalSpacing(14)
+        form.addRow(self.with_hint(self.smart_split,
+                                   "按目标时长把长音频切块识别，减少长音频的跳字与重复。默认开启。"))
+        form.addRow("目标分段长度", self.with_hint(self.chunk_seconds,
+                                   "智能分段时每块的目标时长：30 秒为 Whisper 推荐值；调小更稳但更慢，调大可能吞掉结尾。"))
+        form.addRow(self.with_hint(self.merge,
+                                   "把被切断的同一句话、相邻的重复片段合并成一条字幕。默认开启。"))
+        form.addRow("允许合并的间隔", self.with_hint(self.merge_gap,
+                                   "相邻字幕间隔不超过此值时才合并：调大合并更激进，可能把不同句子并在一起。默认 2 秒。"))
+        form.addRow("字幕段时长上限", self.with_hint(self.merge_duration,
+                                   "合并后单条字幕的最长时长，超过则不合并；合并前后都会应用。默认 20 秒。"))
         timing_layout.addLayout(form)
-        timing_layout.addWidget(label("智能分段按目标时长切分音频；字幕段时长上限应用于合并前后的字幕片段。", "muted", True))
         content_layout.addWidget(timing_card)
         models_card, models_layout = card("本地模型")
         models_layout.addWidget(label("翻译和转录分别保存本地 CTranslate2 模型路径，随任务类型切换。", "muted", True))
         self.model_edits = {}
-        for task, title in (("translate", "中文字幕 · 海南鸡翻译模型"), ("transcribe", "日文字幕 · 日语转录模型")):
+        for task, title, hint_text in (
+            ("translate", "中文字幕 · 海南鸡翻译模型", "用于生成中文字幕；一般无需修改，仅在自行更换模型时调整。"),
+            ("transcribe", "日文字幕 · 日语转录模型", "用于生成日文字幕（转录原文）；一般无需修改，仅在自行更换模型时调整。"),
+        ):
             models_layout.addWidget(label(title, "muted"))
             row = QHBoxLayout()
             edit = QLineEdit()
@@ -497,6 +520,7 @@ class Window(QMainWindow):
             row.addWidget(edit, 1)
             row.addWidget(button("浏览", lambda checked=False, t=task: self.choose_model(t)))
             models_layout.addLayout(row)
+            models_layout.addWidget(label(hint_text, "muted", True))
         content_layout.addWidget(models_card)
         content_layout.addStretch()
         self.settings_content = content
@@ -511,7 +535,7 @@ class Window(QMainWindow):
         return page
 
     def make_help(self):
-        page, layout = self.page("功能说明", "文件导入、字幕生成、预览与输出功能。")
+        page, layout = self.page("功能说明", "文件导入、字幕生成、参数说明、预览与输出功能。")
         text = QTextBrowser()
         text.setOpenExternalLinks(True)
         text.setHtml("""<style>body{font-family:'Microsoft YaHei UI';color:#304058;line-height:1.7}h3{color:#1f416e}p{margin-bottom:18px}</style>
@@ -519,6 +543,10 @@ class Window(QMainWindow):
         <h3>处理方式与预设</h3><p>中文字幕使用海南鸡翻译模型，日文转录使用日语模型。运行设备支持 NVIDIA GPU、AMD RX 5000/6000/7000/9000 系列独显和 CPU。AMD 默认自动选择计算精度。更换显卡类型后，保存设备选择并关闭工作台，再运行下载脚本。标准、轻声与自定义预设控制语音检测参数。</p>
         <h3>字幕预览</h3><p>显示所选文件的字幕内容、开始时间和结束时间。队列与预览区的高度通过分隔条调节。“展开预览”将预览区扩展至工作区宽度，“还原布局”恢复队列与参数面板。</p>
         <h3>输出管理</h3><p>支持 SRT、VTT 和 LRC。默认保存至音频旁的 ChickenRice字幕/中文 或 ChickenRice字幕/日文；也可直接保存至音频所在目录（字幕与音频同目录、不分子目录），或选择自定义输出目录（按语言区分）。默认跳过已有字幕，开启覆盖后替换同名字幕。</p>
+        <h3>参数速查</h3>
+        <p><b>语音检测</b>（标准预设 / 轻声预设）：检测阈值 0.50 / 0.35，最短语音 300 / 100 毫秒，切分所需静音 100 / 250 毫秒，语音前后保留 200 / 400 毫秒。</p>
+        <p><b>切块与合并</b>：目标分段长度 30 秒（范围 5–30 秒），允许合并的间隔 2000 毫秒，字幕段时长上限 20000 毫秒；智能分段与合并重复片段默认开启。</p>
+        <p><b>调参思路</b>：漏字、丢句时先调低检测阈值、调短最短语音；字幕断得太碎时调大切分所需静音；一句话被拆成多条时调大允许合并的间隔；长音频跳字、重复时保持智能分段开启，且目标分段长度不要超过 30 秒。</p>
         <h3>任务与日志</h3><p>显示当前文件、音频块进度和处理用时。停止操作结束当前推理及后续队列，已完成字幕保留。运行日志记录本次参数、引擎输出和错误信息。</p>
         <h3>本地运行</h3><p>音频识别、翻译、设置保存与日志记录均在本机完成。模型路径按任务类型分别保存。</p>
         <p><a href="https://github.com/TransWithAI/Faster-Whisper-TransWithAI-ChickenRice">ChickenRice 项目</a> · <a href="https://github.com/WEIFENG2333/VideoCaptioner">界面交互参考：VideoCaptioner</a></p>""")

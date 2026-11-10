@@ -376,6 +376,17 @@ class GuiTests(Fixture):
         self.assertEqual(w.cues.rowCount(), 1)
         self.assertEqual(w.records[str(w.sources[0])]["status"], "done")
 
+    def test_settings_page_documents_every_parameter(self):
+        w = self.window
+        texts = [child.text() for child in w.settings_content.findChildren(desktop.QLabel)]
+        for phrase in ("置信度阈值", "短于此值的语音片段会被忽略", "语音之间安静达到该时长时才切段",
+                       "每段语音前后额外保留的音频", "按目标时长把长音频切块识别",
+                       "智能分段时每块的目标时长", "合并成一条字幕", "相邻字幕间隔不超过此值时才合并",
+                       "合并后单条字幕的最长时长"):
+            self.assertTrue(any(phrase in text for text in texts), phrase)
+        help_texts = [browser.toPlainText() for browser in w.findChildren(desktop.QTextBrowser)]
+        self.assertTrue(any("参数速查" in text for text in help_texts))
+
     def test_drag_drop_while_running_joins_the_waiting_queue(self):
         w = self.window
         first, second = self.source("slow2"), self.source("early")
